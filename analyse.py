@@ -268,6 +268,10 @@ def sort_channels(file_list, pattern):
             if channel not in sorted_channels.keys():
                 sorted_channels.update({channel: []})
             sorted_channels[channel].append(filename)
+        else:
+            if 'misc' not in sorted_channels.keys():
+                sorted_channels.update(misc=[])
+            sorted_channels['misc'].append(filename)
     return sorted_channels
 
 def merge_files(input_files, prefix, output_directory):
@@ -296,12 +300,41 @@ def get_dimensions(size, ratio=1.2):
 
 def flatten(lst):
     from itertools import chain
+    # do this to take care for lists like [[1, 2], [3, 4], 5]
+    for index, item in enumerate(lst):
+        if not isinstance(item, list):
+            lst[index] = [item]
     new_list = list(chain(*lst))  # flatten a list of type [[1, 2], [3, 4]] to [1, 2, 3, 4]
     # do this recursively until the list contains no more lists
     if any(isinstance(sublist, list) for sublist in new_list):
         return flatten(new_list)
     else:
         return new_list
+
+def get_dict_values_from_list(lst):
+    new_list = []
+    for itm in lst:
+        if isinstance(itm, dict):
+            new_list.append(list(itm.values()))
+        else:
+            new_list.append(itm)
+    new_list = flatten(new_list)
+    return get_all_dict_values(new_list)
+
+def get_all_dict_values(dct):
+    # do we have a dict?
+    if isinstance(dct, dict):
+        vals = list(dct.values())  # use list(dict.values()) to get a list of values instead of a view of the dictionary's values
+        if any(isinstance(subitem, dict) for subitem in vals):
+            return get_dict_values_from_list(vals)
+        else:
+            return vals
+    # if it's not a dict, check for a list containing dicts
+    elif isinstance(dct, list) and any(isinstance(subitem, dict) for subitem in dct):
+        return get_dict_values_from_list(dct)
+    # if there's no list containing dicts, return the given value
+    else:
+        return dct
 
 def main():
     #sys.argv
@@ -366,16 +399,17 @@ def main():
         input_files = os.listdir(os.path.expanduser(INPUT_DATA_PATH))
         #TODO: new in Python 3.5: os.scandir() (faster) https://docs.python.org/dev/library/os.html#os.scandir
     elif file:
-        input_files = file.readlines()
-        for line in input_files:
+        input_files = []
+        for line in file:
+            line = line.strip()
             if len(line.split()) != 1:
                 file.close()
                 sys.exit('There should be only a listing of files in the input file you specified, nothing more!')
             else:
-                print('+++ read file, line: ' + line)
                 if not check_file(line, None):
                     print("        The file '%s' doesn't exist, it will be skipped." % line)
-                    input_files.remove(line)
+                else:
+                    input_files.append(line)
         if not input_files:
             file.close()
             sys.exit("The input file list is empty, will terminate.")
@@ -446,7 +480,7 @@ def main():
     if merge_analysis:
         output_channels = merge_files(output_channels, OUTPUT_FILE_PREFIX, output)
     print(output_channels)
-    sys.exit(0)
+
     # terminate at this point if no plots should be created
     if not plots:
         sys.exit(0)
@@ -484,38 +518,43 @@ def main():
     gStyle.SetCanvasColor(0)
     #gPad.SetLogz()
     histograms = {}
-    for filename in file_list:
-        current = TFile(filename)
-        if current.GetListOfKeys().GetSize() > 1:
-            print('Found more than one directory in file %s' % current.GetName())
-            print('Will use the first one to find the histograms')
-            if verbose:
-                print('The full list of directories:')
-                current.GetListOfKeys().Print()
-        elif not current.GetListOfKeys().GetSize():
-            print('Found no directory in file %s' % current.GetName())
-            print('Will skip this file')
-            continue
-        dir_name = current.GetListOfKeys().First().GetName()
-        #if not current.cd(dir_name):
-        #    print("Can't change directory to '%s', will skip this file" % dir_name)
-        # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
-        dir = current.GetDirectory(dir_name)
-        #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
-        for plot in plots:
-            if not plot in histograms.keys():
-                histograms.update({plot: []})
-            hist = dir.Get(plot)
-            if hist == None:  # with pyROOT null pointers has to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
-                print('histogram not found in %s/%s' % (current.GetName(), dir_name))
+    for channel, file_list in output_channels.items():
+        for filename in file_list:
+            current = TFile(filename)
+            if current.GetListOfKeys().GetSize() > 1:
+                print('Found more than one directory in file %s' % current.GetName())
+                print('Will use the first one to find the histograms')
+                if verbose:
+                    print('The full list of directories:')
+                    current.GetListOfKeys().Print()
+            elif not current.GetListOfKeys().GetSize():
+                print('Found no directory in file %s' % current.GetName())
+                print('Will skip this file')
                 continue
-            #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
-            histograms[plot].append(copy(hist))
-        current.Close()
+            dir_name = current.GetListOfKeys().First().GetName()
+            #if not current.cd(dir_name):
+            #    print("Can't change directory to '%s', will skip this file" % dir_name)
+            # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
+            dir = current.GetDirectory(dir_name)
+            #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
+            for plot in plots:
+                if not plot in histograms.keys():
+                    histograms.update({plot: {}})
+                if not channel in histograms[plot].keys():
+                    histograms[plot].update({channel: []})
+                hist = dir.Get(plot)
+                if hist == None:  # with pyROOT null pointers has to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
+                    print('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
+                    continue
+                #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
+                histograms[plot][channel].append(copy(hist))
+            current.Close()
 
-    if not flatten(histograms.values()):
+    if not get_all_dict_values(histograms):
         sys.exit('No specified histograms found, will terminate')
-
+    print(histograms)
+    print(get_all_dict_values(histograms))
+    sys.exit(0)
     output = get_path(output, 'plots')
     if not check_path(output, create=True, silent=False):
         sys.exit("Unable to create folder to store plots")
