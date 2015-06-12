@@ -286,6 +286,25 @@ def merge_files(input_files, prefix, output_directory):
         merged_files.append(merged)
     return merged_files
 
+def merge_histograms(lst):
+    if not lst:
+        print_error('Passed empty list!')
+        return None
+    elif not isinstance(lst, list):
+        print_error('The passed object is not a list!')
+        return None
+    elif len(lst) == 1:
+        return lst[0]
+
+    from ROOT import TH1, TH2
+    merged_histogram = lst[0]
+    for hist in lst[1:]:
+        if not merged_histogram.Add(hist):
+            print_error('Error adding histogram contents...')
+            return None
+
+    return merged_histogram
+
 # calculate the dimensions which are used to divide the canvas
 # the ratio determines the dimensions, ratio of the length to the height
 # ratio of 1 is for a square layout
@@ -401,6 +420,9 @@ def main():
     elif file:
         input_files = []
         for line in file:
+            # skip empty lines
+            if not line.strip():
+                continue
             line = line.strip()
             if len(line.split()) != 1:
                 file.close()
@@ -472,14 +494,20 @@ def main():
     for channel, input_files in input_channels.items():
         output_channels.update({channel: []})
         for input_file in input_files:
-            output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
+            # make sure that the file contains the specified input prefix,
+            # otherwise add 'Analysis_' to the beginning of the file name
+            # to prevent overwriting existing files
+            if prefix not in input_file:
+                path, filename = os.path.split(input_file)
+                output_file = get_path(path, 'Analysis_' + filename)
+            else:
+                output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
             cmd = ' '.join([goat_bin, goat_config, input_file, output_file])
             print(cmd)
             output_channels[channel].append(output_file)
 
     if merge_analysis:
         output_channels = merge_files(output_channels, OUTPUT_FILE_PREFIX, output)
-    print(output_channels)
 
     # terminate at this point if no plots should be created
     if not plots:
@@ -552,22 +580,37 @@ def main():
 
     if not get_all_dict_values(histograms):
         sys.exit('No specified histograms found, will terminate')
-    print(histograms)
-    print(get_all_dict_values(histograms))
-    sys.exit(0)
+
     output = get_path(output, 'plots')
-    if not check_path(output, create=True, silent=False):
+    if not check_path(output, create=True, silent=True):
         sys.exit("Unable to create folder to store plots")
+
+    # merge histograms which belong to the same channel
+    for plot, channels in histograms.items():
+        for channel, plots in channels.items():
+            if len(plots) == 1:
+                histograms[plot][channel] = histograms[plot][channel][0]
+            elif len(plots) > 1:
+                merged_hist = merge_histograms(plots)
+                if not merged_hist:
+                    sys.exit("Something went wrong merging the %s histograms for channel %s" % (plot, channel))
+                histograms[plot][channel] = merged_hist
+            else:
+                print('No %s histograms found for channel %s')
+                histograms[plot][channel] = None
 
     for name, hists in histograms.items():
         cols, rows = get_dimensions(len(hists))
         canvas = TCanvas(name)
         canvas.Divide(cols, rows)
-        for index, hist in enumerate(hists, start=1):
+        index = 1
+        for channel, hist in hists.items():
             canvas.cd(index)
             hist.Draw()
+            index += 1
         timestamp = datetime.datetime.now().strftime('_%Y-%m-%d_%H-%M')  # add timestamp to prevent overwriting existing files
         pdfname = get_path(output, name + timestamp + '.pdf')
+        canvas.Update()
         canvas.Print(pdfname)
 
     sys.exit(0)
