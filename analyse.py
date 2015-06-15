@@ -235,6 +235,60 @@ def check_goat():
         config = get_path(GOAT_PATH, GOAT_CONFIG)
     return bin, config
 
+def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='Analysis_', sim_log=None, verbose=False):
+    output_channels = {}
+    if verbose:
+        print_color('\n - - - Starting GoAT analysis with ant - - - \n', RED)
+    if sim_log:
+        sim_log.write('\n' + timestamp() + ' - - - Starting GoAT analysis with ant - - - \n')
+    log_output_path = output_directory
+    if not log_output_path:  # if no output_directory is given, the path of the first file will be used for the log file
+        log_output_path = os.path.split(get_all_dict_values(files)[0])[0]
+
+    with open(get_path(log_output_path, 'goat.log'), 'w') as log:
+        for channel, input_files in files.items():
+            output_channels.update({channel: []})
+            if verbose:
+                print_color('Processing channel %s' % format_channel(channel, False), GREEN)
+            if sim_log:
+                sim_log.write('\n' + timestamp() + 'Processing channel %s\n' % format_channel(channel, False))
+            for input_file in input_files:
+                # make sure that the file contains the specified input prefix,
+                # otherwise add 'Analysis_' to the beginning of the file name
+                # to prevent overwriting existing files
+                path, filename = os.path.split(input_file)
+                if prefix not in input_file:
+                    if not output_directory:
+                        output_file = get_path(path, 'Analysis_' + filename)
+                    else:
+                        output_file = get_path(output_directory, 'Analysis_' + filename)
+                else:
+                    output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
+                    if not path in output_directory:
+                        output_file = get_path(output_directory, filename)
+                if verbose:
+                    logger.info('Processing file %s' % input_file)
+                if sim_log:
+                    sim_log.write(timestamp() + 'Processing file %s\n' % input_file)
+                    sim_log.flush()
+                cmd = ' '.join([goat_bin, goat_config, input_file, output_file])
+                # use -b for batchmode (no graphical output) and -q to exit after processing files
+                # print errors to log file due to error outputs like "Info in <PStdData::PStdData()>: (CONSTRUCTOR)" because of Pluto
+                ret = run(cmd + ' -b -q', log, True)
+                if ret:
+                    logger.critical('Non-zero return code (%d), something might have gone wrong' % ret)
+                    if sim_log:
+                        sim_log.write(timestamp() + 'Non-zero return code (%d), something might have gone wrong\n' % ret)
+                        sim_log.flush()
+                output_channels[channel].append(output_file)
+
+    if verbose:
+        print_color('\nFinished analysis\n', RED)
+    if sim_log:
+        sim_log.write('\n' + timestamp() + 'Finished analysis\n\n')
+
+    return output_channels
+
 def is_valid_file(parser, arg):
     if not os.path.isfile(arg):
         parser.error('The file %s does not exist!' % arg)
@@ -377,7 +431,7 @@ def main():
     file = None
     output = None
     merge = args.merge
-    analyse = args.analyse and merge
+    analyse_merged = args.analyse and merge
     merge_analysis = args.merge_analysis
     plots = args.plot
     verbose = args.verbose
@@ -475,7 +529,7 @@ def main():
         if prefix is INPUT_FILE_PREFIX:
             prefix += '_'
         merged_files = merge_files(input_channels, prefix, output)
-        if not analyse:
+        if not analyse_merged:
             sys.exit(0)
         print(merged_files)
 
@@ -484,24 +538,11 @@ def main():
         sys.exit(1)
     goat_bin, goat_config = check
 
-    if analyse:
+    if analyse_merged:
         input_files = merged_files
         pattern = '^' + prefix + '_(.+)_merged.root$'
         input_channels = sort_channels(merged_files, pattern)
-    for channel, input_files in input_channels.items():
-        output_channels.update({channel: []})
-        for input_file in input_files:
-            # make sure that the file contains the specified input prefix,
-            # otherwise add 'Analysis_' to the beginning of the file name
-            # to prevent overwriting existing files
-            if prefix not in input_file:
-                path, filename = os.path.split(input_file)
-                output_file = get_path(path, 'Analysis_' + filename)
-            else:
-                output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
-            cmd = ' '.join([goat_bin, goat_config, input_file, output_file])
-            print(cmd)
-            output_channels[channel].append(output_file)
+    output_channels = goat_analysis(input_channels, goat_bin, goat_config, output, prefix=prefix, verbose=verbose)
 
     if merge_analysis:
         output_channels = merge_files(output_channels, OUTPUT_FILE_PREFIX, output)
