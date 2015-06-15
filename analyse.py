@@ -383,11 +383,8 @@ def main():
     verbose = args.verbose
     if args.filename: #args.file_list:
         file = args.filename[0] #args.file_list[0]
-        #print(file)
-        print('use file ' + file.name)
     if args.dir:
         dir = args.dir[0]
-        print('use directory ' + dir)
     if dir and file:
         sys.exit('Use either --dir or --file-list, not both')
     if not dir and not file:
@@ -398,12 +395,21 @@ def main():
             dir = get_path(INPUT_DATA_PATH)
     if args.output:
         output = args.output[0]
+        if verbose:
+            print("Use directory '%s' to store the output data" % output)
     else:
-        print('No output directory specified, will use OUTPUT_DATA_PATH')
+        if verbose:
+            print('No output directory specified, will use OUTPUT_DATA_PATH')
         if not check_path(OUTPUT_DATA_PATH, True):
             sys.exit('        Please make sure the specified output directory OUTPUT_DATA_PATH exists.')
         else:
             output = get_path(OUTPUT_DATA_PATH)
+
+    if verbose:
+        if file:
+            print("Use file '%s' to read in files" % file.name)
+        elif dir:
+            print("Use directory '%s' to read in files" % dir)
 
     if dir:
         input_files = os.listdir(os.path.expanduser(INPUT_DATA_PATH))
