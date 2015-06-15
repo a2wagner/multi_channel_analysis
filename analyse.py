@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # vim: set ai ts=4 sw=4 sts=4 noet fileencoding=utf-8 ft=python
 
+'''
+This python script is intended to analyse a given amount of files
+either via a file which contains a listing of the files which should
+be analysed or a directory which will be read in. The files will be
+sorted according to the pattern which is specified in the main method.
+If it's not changed, it will match the files which had been produced
+with the simulation chain Python script.
+Below are a few constants which have to be changed in order to adapt
+the file to your analysis environment on your local computer.
+
+See the help
+./analyse.py --help
+for more information how to use this script.
+'''
+
+#TODO: normalisation?
+
 # IMPORTANT!
 # Change the paths below according to your needs
 INPUT_DATA_PATH = '~/git/simulation_chain/merged'
@@ -35,34 +52,6 @@ logging.setLoggerClass(ColoredLogger)
 logger = logging.getLogger('Analysis')
 #logger.setLevel(logging.DEBUG)
 
-channels = [
-    'etap_e+e-g',
-    'etap_pi+pi-eta',
-    'etap_rho0g',
-    'etap_mu+mu-g',
-    'etap_gg',
-    'eta_e+e-g',
-    'eta_pi+pi-g',
-    'eta_pi+pi-pi0',
-    'eta_mu+mu-g',
-    'eta_gg',
-    'omega_e+e-pi0',
-    'omega_pi+pi-pi0',
-    'omega_pi+pi-',
-    'rho0_e+e-',
-    'rho0_pi+pi-',
-    'pi0_e+e-g',
-    'pi0_gg',
-    'pi+pi-pi0',
-    'pi+pi-',
-    'pi0pi0_4g',
-    'pi0eta_4g',
-    'etap_pi0pi0eta',
-    'etap_pi0pi0pi0',
-    'etap_pi+pi-pi0',
-    'etap_omegag',
-    'omega_etag'
-]
 
 def check_path(path, create=False, silent=False):
     path = os.path.expanduser(path)
@@ -549,34 +538,37 @@ def main():
     for channel, file_list in output_channels.items():
         for filename in file_list:
             current = TFile(filename)
-            if current.GetListOfKeys().GetSize() > 1:
-                print('Found more than one directory in file %s' % current.GetName())
-                print('Will use the first one to find the histograms')
-                if verbose:
-                    print('The full list of directories:')
-                    current.GetListOfKeys().Print()
-            elif not current.GetListOfKeys().GetSize():
-                print('Found no directory in file %s' % current.GetName())
-                print('Will skip this file')
-                continue
-            dir_name = current.GetListOfKeys().First().GetName()
-            #if not current.cd(dir_name):
-            #    print("Can't change directory to '%s', will skip this file" % dir_name)
-            # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
-            dir = current.GetDirectory(dir_name)
-            #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
-            for plot in plots:
-                if not plot in histograms.keys():
-                    histograms.update({plot: {}})
-                if not channel in histograms[plot].keys():
-                    histograms[plot].update({channel: []})
-                hist = dir.Get(plot)
-                if hist == None:  # with pyROOT null pointers has to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
-                    print('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
+            if current.IsOpen():  # only proceed if the file exists and is opened
+                if current.GetListOfKeys().GetSize() > 1:
+                    print('Found more than one directory in file %s' % current.GetName())
+                    print('Will use the first one to find the histograms')
+                    if verbose:
+                        print('The full list of directories:')
+                        current.GetListOfKeys().Print()
+                elif not current.GetListOfKeys().GetSize():
+                    print('Found no directory in file %s' % current.GetName())
+                    print('Will skip this file')
                     continue
-                #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
-                histograms[plot][channel].append(copy(hist))
-            current.Close()
+                dir_name = current.GetListOfKeys().First().GetName()
+                #if not current.cd(dir_name):
+                #    print("Can't change directory to '%s', will skip this file" % dir_name)
+                # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
+                dir = current.GetDirectory(dir_name)
+                #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
+                for plot in plots:
+                    if not plot in histograms.keys():
+                        histograms.update({plot: {}})
+                    if not channel in histograms[plot].keys():
+                        histograms[plot].update({channel: []})
+                    #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
+                    hist = dir.Get(plot)
+                    if hist == None:  # with pyROOT null pointers have to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
+                        print('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
+                        continue
+                    histograms[plot][channel].append(copy(hist))
+                current.Close()
+            else:
+                print('The file could not be opened, please make sure it exists and is readable')
 
     if not get_all_dict_values(histograms):
         sys.exit('No specified histograms found, will terminate')
@@ -595,6 +587,8 @@ def main():
                 if not merged_hist:
                     sys.exit("Something went wrong merging the %s histograms for channel %s" % (plot, channel))
                 histograms[plot][channel] = merged_hist
+                if verbose:
+                    print('Merged %d %s histograms for channel %s' % (len(plots), plot, channel))
             else:
                 print('No %s histograms found for channel %s')
                 histograms[plot][channel] = None
@@ -612,8 +606,6 @@ def main():
         pdfname = get_path(output, name + timestamp + '.pdf')
         canvas.Update()
         canvas.Print(pdfname)
-
-    sys.exit(0)
 
 
 if __name__ == '__main__':
