@@ -335,6 +335,8 @@ def get_all_dict_values(dct):
         vals = list(dct.values())  # use list(dict.values()) to get a list of values instead of a view of the dictionary's values
         if any(isinstance(subitem, dict) for subitem in vals):
             return get_dict_values_from_list(vals)
+        elif any(isinstance(subitem, list) for subitem in vals):
+            return flatten(vals)
         else:
             return vals
     # if it's not a dict, check for a list containing dicts
