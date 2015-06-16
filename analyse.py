@@ -267,9 +267,9 @@ def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='A
                     output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
                     if not path in output_directory:
                         output_file = get_path(output_directory, filename)
-                logger.info('Processing file %s' % input_file)
+                logger.info('Analysing file %s' % input_file)
                 if sim_log:
-                    sim_log.write(timestamp() + 'Processing file %s\n' % input_file)
+                    sim_log.write(timestamp() + 'Analysing file %s\n' % input_file)
                     sim_log.flush()
                 cmd = ' '.join([goat_bin, goat_config, input_file, output_file])
                 # use -b for batchmode (no graphical output) and -q to exit after processing files
@@ -312,14 +312,12 @@ def merge_files(files, output_directory=None, prefix='Merged', sim_log=None, for
                 merged = get_path(output_directory, merged)
             else:
                 merged = get_path(log_output_path, merged)
+
             if force:
                 cmd = 'hadd -f '
             else:
                 cmd = 'hadd '
-            cmd += merged
-            for input_file in input_files:
-                cmd += ' ' + input_file
-            #print(cmd)
+            cmd += merged + ' '.join(input_files)
             ret = run(cmd, log, True)  # print errors to the log file because of missing PParticle dictionary
             if ret:
                 logger.critical('Non-zero return code (%d), something might have gone wrong' % ret)
@@ -463,8 +461,8 @@ def main():
     #parser.add_argument()
 
     args = parser.parse_args()
-    dir = None
-    file = None
+    input_dir = None
+    input_file_list = None
     output = None
     merge = args.merge
     analyse_merged = args.analyse and merge
@@ -473,17 +471,17 @@ def main():
     force = args.force
     verbose = args.verbose
     if args.filename: #args.file_list:
-        file = args.filename[0] #args.file_list[0]
+        input_file_list = args.filename[0] #args.input_files[0]
     if args.dir:
-        dir = args.dir[0]
-    if dir and file:
-        sys.exit('Use either --dir or --file-list, not both')
-    if not dir and not file:
-        print("You've specified neither a file nor a directory. INPUT_DATA_PATH will be used.")
+        input_dir = args.dir[0]
+    if input_dir and input_file_list:
+        sys.exit('Use either --dir or --input-files, not both')
+    if not input_dir and not input_file_list:
+        print("You've specified neither a file nor a directory as input. INPUT_DATA_PATH will be used.")
         if not check_path(INPUT_DATA_PATH):
             sys.exit("        Please make sure the specified input directory INPUT_DATA_PATH exists.")
         else:
-            dir = get_path(INPUT_DATA_PATH)
+            input_dir = get_path(INPUT_DATA_PATH)
     if args.output:
         output = args.output[0]
         if verbose:
@@ -497,23 +495,23 @@ def main():
             output = get_path(OUTPUT_DATA_PATH)
 
     if verbose:
-        if file:
-            print("Use file '%s' to read in files" % file.name)
-        elif dir:
-            print("Use directory '%s' to read in files" % dir)
+        if input_file_list:
+            print("Use file '%s' to read in files" % input_file_list.name)
+        elif input_dir:
+            print("Use directory '%s' to read in files" % input_dir)
 
-    if dir:
-        input_files = os.listdir(os.path.expanduser(INPUT_DATA_PATH))
+    if input_dir:
+        input_files = [filename for filename in os.listdir(input_dir) if filename.endswith('.root')]
         #TODO: new in Python 3.5: os.scandir() (faster) https://docs.python.org/dev/library/os.html#os.scandir
-    elif file:
+    elif input_file_list:
         input_files = []
-        for line in file:
+        for line in input_file_list:
             # skip empty lines
             if not line.strip():
                 continue
             line = line.strip()
             if len(line.split()) != 1:
-                file.close()
+                input_file_list.close()
                 sys.exit('There should be only a listing of files in the input file you specified, nothing more!')
             else:
                 if not check_file(line, None):
@@ -521,11 +519,11 @@ def main():
                 elif line.endswith('.root'):
                     input_files.append(line)
         if not input_files:
-            file.close()
+            input_file_list.close()
             sys.exit("The input file list is empty, will terminate.")
-        file.close()
+        input_file_list.close()
     else:
-        sys.exit("Neither directory nor file-list exists. This shouldn't happen.")
+        sys.exit("Neither input-directory nor input-file-list exists. This shouldn't happen.")
 
     output_files = []
     channels = []
@@ -609,17 +607,11 @@ def main():
     from ROOT import TFile, TDirectoryFile
     from ROOT import TCanvas, TH1D, TH2D, TLegend
 
-    #sys.exit(0)
-
-    #test file
-    #file_list = ['/home/wagners/test_out.root']
-    #print('start ROOT test processing with list:')
-    #print(file_list)
-
     gROOT.Reset()
     gStyle.SetCanvasColor(0)
     #gPad.SetLogz()
     histograms = {}
+
     for channel, file_list in output_channels.items():
         for filename in file_list:
             current = TFile(filename)
@@ -683,8 +675,11 @@ def main():
         canvas = TCanvas(name)
         canvas.Divide(cols, rows)
         index = 1
-        for channel, hist in hists.items():
+        # iterate over sorted dict keys that the histograms have the same order all the time
+        for channel in sorted(hists):
+            hist = hists[channel]
             canvas.cd(index)
+            hist.SetTitle(channel)
             hist.Draw()
             index += 1
         timestamp = datetime.datetime.now().strftime('_%Y-%m-%d_%H-%M')  # add timestamp to prevent overwriting existing files
