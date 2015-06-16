@@ -17,6 +17,7 @@ for more information how to use this script.
 '''
 
 #TODO: normalisation?
+# clean up Physics_XXX.root files created by goat (maybe check filesize less than 1kB or so...)
 
 # IMPORTANT!
 # Change the paths below according to your needs
@@ -235,7 +236,7 @@ def check_goat():
         config = get_path(GOAT_PATH, GOAT_CONFIG)
     return bin, config
 
-def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='Analysis_', sim_log=None, verbose=False):
+def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='Analysis', sim_log=None, verbose=False):
     output_channels = {}
     if verbose:
         print_color('\n - - - Starting GoAT analysis with ant - - - \n', RED)
@@ -266,8 +267,7 @@ def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='A
                     output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
                     if not path in output_directory:
                         output_file = get_path(output_directory, filename)
-                if verbose:
-                    logger.info('Processing file %s' % input_file)
+                logger.info('Processing file %s' % input_file)
                 if sim_log:
                     sim_log.write(timestamp() + 'Processing file %s\n' % input_file)
                     sim_log.flush()
@@ -288,6 +288,52 @@ def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='A
         sim_log.write('\n' + timestamp() + 'Finished analysis\n\n')
 
     return output_channels
+
+def merge_files(files, output_directory=None, prefix='Merged', sim_log=None, force=False, verbose=False):
+    merged_files = []
+    if verbose:
+        print_color('\n - - - Start merging root files - - - \n', RED)
+    if sim_log:
+        sim_log.write('\n' + timestamp() + ' - - - Start merging root files - - - \n')
+    log_output_path = output_directory
+    print(get_path(log_output_path, 'hadd.log'))
+    if not log_output_path:  # if no output_directory is given, the path of the first file will be used for the log file
+        log_output_path = os.path.split(get_all_dict_values(files)[0])[0]
+
+    with open(get_path(log_output_path, 'hadd.log'), 'w') as log:
+        for channel, input_files in files.items():
+            merged = prefix + '_' + channel + '_merged.root'
+            if verbose:
+                print_color('Processing channel %s' % format_channel(channel, False), GREEN)
+            logger.info('Merging file %s' % merged)
+            if sim_log:
+                sim_log.write('\n' + timestamp() + 'Processing channel %s\n' % format_channel(channel, False))
+            if output_directory:
+                merged = get_path(output_directory, merged)
+            else:
+                merged = get_path(log_output_path, merged)
+            if force:
+                cmd = 'hadd -f '
+            else:
+                cmd = 'hadd '
+            cmd += merged
+            for input_file in input_files:
+                cmd += ' ' + input_file
+            #print(cmd)
+            ret = run(cmd, log, True)  # print errors to the log file because of missing PParticle dictionary
+            if ret:
+                logger.critical('Non-zero return code (%d), something might have gone wrong' % ret)
+                if sim_log:
+                    sim_log.write(timestamp() + 'Non-zero return code (%d), something might have gone wrong\n' % ret)
+                    sim_log.flush()
+            merged_files.append(merged)
+
+    if verbose:
+        print_color('\nFinished merging files\n', RED)
+    if sim_log:
+        sim_log.write('\n' + timestamp() + 'Finished merging files\n\n')
+
+    return merged_files
 
 def is_valid_file(parser, arg):
     if not os.path.isfile(arg):
@@ -316,18 +362,6 @@ def sort_channels(file_list, pattern):
                 sorted_channels.update(misc=[])
             sorted_channels['misc'].append(filename)
     return sorted_channels
-
-def merge_files(input_files, prefix, output_directory):
-    merged_files = []
-    for chan, lst in input_files.items():
-        merged = prefix + '_' + chan + '_merged.root'
-        merged = get_path(output_directory, merged)
-        cmd = 'hadd ' + merged
-        for f in lst:
-            cmd += ' ' + f
-        #print(cmd)
-        merged_files.append(merged)
-    return merged_files
 
 def merge_histograms(lst):
     if not lst:
@@ -404,7 +438,7 @@ def main():
     #sys.argv
 
     parser = argparse.ArgumentParser(description='Analyse simulation files')
-    parser.add_argument('-f', '--file-list', nargs=1, metavar='file', dest='filename',
+    parser.add_argument('-i', '--input-files', nargs=1, metavar='file', dest='filename',
             type=lambda x: is_valid_file(parser, x), #argparse.FileType('r'), #required=True
             help='file with a list of simulation files which should be analysed; cannot be used together with --dir')
     parser.add_argument('-d', '--dir', nargs=1, metavar='directory',
@@ -421,6 +455,8 @@ def main():
             help='merge (join) single analysed files for each channel into one file')
     parser.add_argument('-p', '--plot', nargs='+', metavar='histogram name',
             help='the name of the histogram(s) which should be plotted for each file')
+    parser.add_argument('-f', '--force', action='store_true',
+            help='force recreation of files if they already exist (applies mainly for merging files)')
     # possible options: s -> skip analysis, only plot stuff; l -> list possible histograms from file
     parser.add_argument('-v', '--verbose', action='store_true',
             help='print logging output to the terminal')
@@ -434,6 +470,7 @@ def main():
     analyse_merged = args.analyse and merge
     merge_analysis = args.merge_analysis
     plots = args.plot
+    force = args.force
     verbose = args.verbose
     if args.filename: #args.file_list:
         file = args.filename[0] #args.file_list[0]
@@ -481,7 +518,7 @@ def main():
             else:
                 if not check_file(line, None):
                     print("        The file '%s' doesn't exist, it will be skipped." % line)
-                else:
+                elif line.endswith('.root'):
                     input_files.append(line)
         if not input_files:
             file.close()
@@ -528,10 +565,9 @@ def main():
         prefix = 'Goat'
         if prefix is INPUT_FILE_PREFIX:
             prefix += '_'
-        merged_files = merge_files(input_channels, prefix, output)
+        merged_files = merge_files(input_channels, output, prefix=prefix, force=force)
         if not analyse_merged:
             sys.exit(0)
-        print(merged_files)
 
     check = check_goat()
     if not check:
@@ -545,7 +581,7 @@ def main():
     output_channels = goat_analysis(input_channels, goat_bin, goat_config, output, prefix=prefix, verbose=verbose)
 
     if merge_analysis:
-        output_channels = merge_files(output_channels, OUTPUT_FILE_PREFIX, output)
+        output_channels = merge_files(output_channels, output, prefix=OUTPUT_FILE_PREFIX, force=force)
 
     # terminate at this point if no plots should be created
     if not plots:
