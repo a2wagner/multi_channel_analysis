@@ -22,7 +22,7 @@ for more information how to use this script.
 # IMPORTANT!
 # Change the paths below according to your needs
 INPUT_DATA_PATH = '~/git/simulation_chain/merged'
-OUTPUT_DATA_PATH = '~/analysis/output'
+OUTPUT_DATA_PATH = '~/git/analysis/output'
 GOAT_PATH = '~/git/ClassBasedAnalysis'
 GOAT_BUILD = '~/git/ClassBasedAnalysis/qt-build'
 GOAT_BIN = 'etap_dalitz'
@@ -518,6 +518,8 @@ def main():
                     print("        The file '%s' doesn't exist, it will be skipped." % line)
                 elif line.endswith('.root'):
                     input_files.append(line)
+                else:
+                    print("The file '%s' seems not to be a root file, it will be skipped." % line)
         if not input_files:
             input_file_list.close()
             sys.exit("The input file list is empty, will terminate.")
@@ -632,6 +634,12 @@ def main():
                 # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
                 dir = current.GetDirectory(dir_name)
                 #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
+                if dir.GetListOfKeys().GetSize() > 0 and verbose:
+                    print('The full list of histograms:')
+                    dir.GetListOfKeys().Print()
+                elif not dir.GetListOfKeys().GetSize():
+                    print('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
+                    print('Will skip this file')
                 for plot in plots:
                     if not plot in histograms.keys():
                         histograms.update({plot: {}})
