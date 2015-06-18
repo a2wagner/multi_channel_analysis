@@ -317,7 +317,7 @@ def merge_files(files, output_directory=None, prefix='Merged', sim_log=None, for
                 cmd = 'hadd -f '
             else:
                 cmd = 'hadd '
-            cmd += merged + ' '.join(input_files)
+            cmd += merged + ' ' + ' '.join(input_files)
             ret = run(cmd, log, True)  # print errors to the log file because of missing PParticle dictionary
             if ret:
                 logger.critical('Non-zero return code (%d), something might have gone wrong' % ret)
@@ -635,8 +635,12 @@ def main():
                 dir = current.GetDirectory(dir_name)
                 #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
                 if dir.GetListOfKeys().GetSize() > 0 and verbose:
-                    print('The full list of histograms:')
-                    dir.GetListOfKeys().Print()
+                    print('The full list of histograms in file %s:' % current.GetName())
+                    iter = dir.GetListOfKeys().MakeIterator()
+                    key = iter()
+                    while key:
+                        print('  %s: %s (%s)' % (key.GetClassName(), key.GetName(), key.GetTitle()))
+                        key = iter()
                 elif not dir.GetListOfKeys().GetSize():
                     print('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
                     print('Will skip this file')
