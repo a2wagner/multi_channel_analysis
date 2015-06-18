@@ -510,6 +510,9 @@ def main():
             if not line.strip():
                 continue
             line = line.strip()
+            # skip lines starting with a hash
+            if line.startswith('#'):
+                continue
             if len(line.split()) != 1:
                 input_file_list.close()
                 sys.exit('There should be only a listing of files in the input file you specified, nothing more!')
