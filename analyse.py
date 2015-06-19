@@ -267,7 +267,10 @@ def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='A
                     output_file = input_file.replace(prefix, OUTPUT_FILE_PREFIX)
                     if not path in output_directory:
                         output_file = get_path(output_directory, filename)
-                logger.info('Analysing file %s' % input_file)
+                filename = input_file
+                if not verbose:
+                    filename = os.path.basename(filename)
+                logger.info('Analysing file %s' % filename)
                 if sim_log:
                     sim_log.write(timestamp() + 'Analysing file %s\n' % input_file)
                     sim_log.flush()
@@ -296,7 +299,6 @@ def merge_files(files, output_directory=None, prefix='Merged', sim_log=None, for
     if sim_log:
         sim_log.write('\n' + timestamp() + ' - - - Start merging root files - - - \n')
     log_output_path = output_directory
-    print(get_path(log_output_path, 'hadd.log'))
     if not log_output_path:  # if no output_directory is given, the path of the first file will be used for the log file
         log_output_path = os.path.split(get_all_dict_values(files)[0])[0]
 
@@ -475,9 +477,10 @@ def main():
     if args.dir:
         input_dir = args.dir[0]
     if input_dir and input_file_list:
-        sys.exit('Use either --dir or --input-files, not both')
+        logger.error('Use either --dir or --input-files, not both')
+        sys.exit(1)
     if not input_dir and not input_file_list:
-        print("You've specified neither a file nor a directory as input. INPUT_DATA_PATH will be used.")
+        logger.info("You've specified neither a file nor a directory as input. INPUT_DATA_PATH will be used.")
         if not check_path(INPUT_DATA_PATH):
             sys.exit("        Please make sure the specified input directory INPUT_DATA_PATH exists.")
         else:
@@ -515,20 +518,23 @@ def main():
                 continue
             if len(line.split()) != 1:
                 input_file_list.close()
-                sys.exit('There should be only a listing of files in the input file you specified, nothing more!')
+                logger.error('There should be only a listing of files in the input file you specified, nothing more!')
+                sys.exit(1)
             else:
                 if not check_file(line, None):
                     print("        The file '%s' doesn't exist, it will be skipped." % line)
                 elif line.endswith('.root'):
                     input_files.append(line)
                 else:
-                    print("The file '%s' seems not to be a root file, it will be skipped." % line)
+                    logger.warning("The file '%s' seems not to be a root file, it will be skipped." % line)
         if not input_files:
             input_file_list.close()
-            sys.exit("The input file list is empty, will terminate.")
+            logger.error("The input file list is empty, will terminate.")
+            sys.exit(1)
         input_file_list.close()
     else:
-        sys.exit("Neither input-directory nor input-file-list exists. This shouldn't happen.")
+        logger.error("Neither input-directory nor input-file-list exists. This shouldn't happen.")
+        sys.exit(1)
 
     output_files = []
     channels = []
@@ -546,7 +552,7 @@ def main():
     #        input_channels[match.group(1)].append(filename)
     input_channels = sort_channels(input_files, pattern)
     channels = input_channels.keys()
-    print('Found %d different channels:' % len(channels))
+    logger.info('Found %d different channels:' % len(channels))
     if verbose:
         for chan in channels:
             try:
@@ -560,7 +566,7 @@ def main():
             chan = format_channel(chan, False)
         except:
             None
-        print(chan, ' (%d files)' % len(lst))
+        logger.info('   {0:15s} ({1:d} files)'.format(chan, len(lst)))
         if verbose:
             for f in lst:
                 print('   ' + f)
@@ -622,14 +628,14 @@ def main():
             current = TFile(filename)
             if current.IsOpen():  # only proceed if the file exists and is opened
                 if current.GetListOfKeys().GetSize() > 1:
-                    print('Found more than one directory in file %s' % current.GetName())
-                    print('Will use the first one to find the histograms')
+                    logger.warning('Found more than one directory in file %s' % current.GetName())
+                    logger.warning('Will use the first one to find the histograms')
                     if verbose:
                         print('The full list of directories:')
                         current.GetListOfKeys().Print()
                 elif not current.GetListOfKeys().GetSize():
-                    print('Found no directory in file %s' % current.GetName())
-                    print('Will skip this file')
+                    logger.critical('Found no directory in file %s' % current.GetName())
+                    logger.critical('Will skip this file')
                     continue
                 dir_name = current.GetListOfKeys().First().GetName()
                 #if not current.cd(dir_name):
@@ -645,8 +651,8 @@ def main():
                         print('  %s: %s (%s)' % (key.GetClassName(), key.GetName(), key.GetTitle()))
                         key = iter()
                 elif not dir.GetListOfKeys().GetSize():
-                    print('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
-                    print('Will skip this file')
+                    logger.critical('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
+                    logger.critical('Will skip this file')
                 for plot in plots:
                     if not plot in histograms.keys():
                         histograms.update({plot: {}})
@@ -655,19 +661,21 @@ def main():
                     #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
                     hist = dir.Get(plot)
                     if hist == None:  # with pyROOT null pointers have to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
-                        print('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
+                        logger.critical('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
                         continue
                     histograms[plot][channel].append(copy(hist))
                 current.Close()
             else:
-                print('The file could not be opened, please make sure it exists and is readable')
+                logger.error('The file could not be opened, please make sure it exists and is readable')
 
     if not get_all_dict_values(histograms):
-        sys.exit('No specified histograms found, will terminate')
+        logger.error('No specified histograms found, will terminate')
+        sys.exit(1)
 
     output = get_path(output, 'plots')
     if not check_path(output, create=True, silent=True):
-        sys.exit("Unable to create folder to store plots")
+        logger.error("Unable to create folder to store plots")
+        sys.exit(1)
 
     # merge histograms which belong to the same channel
     for plot, channels in histograms.items():
@@ -677,12 +685,13 @@ def main():
             elif len(plots) > 1:
                 merged_hist = merge_histograms(plots)
                 if not merged_hist:
-                    sys.exit("Something went wrong merging the %s histograms for channel %s" % (plot, channel))
+                    logger.error("Something went wrong merging the %s histograms for channel %s" % (plot, channel))
+                    sys.exit(1)
                 histograms[plot][channel] = merged_hist
                 if verbose:
                     print('Merged %d %s histograms for channel %s' % (len(plots), plot, channel))
             else:
-                print('No %s histograms found for channel %s')
+                logger.critical('No %s histograms found for channel %s')
                 histograms[plot][channel] = None
 
     for name, hists in histograms.items():
@@ -707,9 +716,10 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print('\nCtrl+C detected, will abort analysis')
+        print()
+        logger.warning('Ctrl+C detected, will abort analysis')
         sys.exit(0)
     except Exception as e:
-        print('An error occured during execution:')
-        print(e)
+        logger.error('An error occured during execution:')
+        logger.error(e)
         sys.exit(1)
