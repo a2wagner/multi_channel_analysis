@@ -51,7 +51,6 @@ from color import *
 
 logging.setLoggerClass(ColoredLogger)
 logger = logging.getLogger('Analysis')
-#logger.setLevel(logging.DEBUG)
 
 
 def check_path(path, create=False, silent=False):
@@ -250,7 +249,7 @@ def goat_analysis(files, goat_bin, goat_config, output_directory=None, prefix='A
         for channel, input_files in files.items():
             output_channels.update({channel: []})
             if verbose:
-                print_color('Processing channel %s' % format_channel(channel, False), GREEN)
+                print_color('     Processing channel %s' % format_channel(channel, False), GREEN)
             if sim_log:
                 sim_log.write('\n' + timestamp() + 'Processing channel %s\n' % format_channel(channel, False))
             for input_file in input_files:
@@ -306,7 +305,7 @@ def merge_files(files, output_directory=None, prefix='Merged', sim_log=None, for
         for channel, input_files in files.items():
             merged = prefix + '_' + channel + '_merged.root'
             if verbose:
-                print_color('Processing channel %s' % format_channel(channel, False), GREEN)
+                print_color('     Processing channel %s' % format_channel(channel, False), GREEN)
             logger.info('Merging file %s' % merged)
             if sim_log:
                 sim_log.write('\n' + timestamp() + 'Processing channel %s\n' % format_channel(channel, False))
@@ -472,6 +471,11 @@ def main():
     plots = args.plot
     force = args.force
     verbose = args.verbose
+    # adapt logger level to verbose statement
+    if verbose:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
     if args.filename: #args.file_list:
         input_file_list = args.filename[0] #args.input_files[0]
     if args.dir:
@@ -487,21 +491,19 @@ def main():
             input_dir = get_path(INPUT_DATA_PATH)
     if args.output:
         output = args.output[0]
-        if verbose:
-            print("Use directory '%s' to store the output data" % output)
+        logger.debug("Use directory '%s' to store the output data" % output)
     else:
-        if verbose:
-            print('No output directory specified, will use OUTPUT_DATA_PATH')
+        logger.debug('No output directory specified, will use OUTPUT_DATA_PATH')
         if not check_path(OUTPUT_DATA_PATH, True):
             sys.exit('        Please make sure the specified output directory OUTPUT_DATA_PATH exists.')
         else:
             output = get_path(OUTPUT_DATA_PATH)
+            logger.debug("Use directory '%s' to store the output data" % output)
 
-    if verbose:
-        if input_file_list:
-            print("Use file '%s' to read in files" % input_file_list.name)
-        elif input_dir:
-            print("Use directory '%s' to read in files" % input_dir)
+    if input_file_list:
+        logger.debug("Use file '%s' to read in files" % input_file_list.name)
+    elif input_dir:
+        logger.debug("Use directory '%s' to read in files" % input_dir)
 
     if input_dir:
         input_files = [filename for filename in os.listdir(input_dir) if filename.endswith('.root')]
@@ -556,10 +558,9 @@ def main():
     if verbose:
         for chan in channels:
             try:
-                print('   ' + format_channel(chan, False))
+                logger.debug('   ' + format_channel(chan, False))
             except:
-                print('   ' + chan)
-        print()
+                logger.debug('   ' + chan)
     for chan, lst in input_channels.items():
         #n = max_file_number(lst)
         try:
@@ -569,12 +570,12 @@ def main():
         logger.info('   {0:15s} ({1:d} files)'.format(chan, len(lst)))
         if verbose:
             for f in lst:
-                print('   ' + f)
+                logger.debug('   ' + f)
     if merge:
         prefix = 'Goat'
         if prefix is INPUT_FILE_PREFIX:
             prefix += '_'
-        merged_files = merge_files(input_channels, output, prefix=prefix, force=force)
+        merged_files = merge_files(input_channels, output, prefix=prefix, force=force, verbose=verbose)
         if not analyse_merged:
             sys.exit(0)
 
@@ -590,7 +591,7 @@ def main():
     output_channels = goat_analysis(input_channels, goat_bin, goat_config, output, prefix=prefix, verbose=verbose)
 
     if merge_analysis:
-        output_channels = merge_files(output_channels, output, prefix=OUTPUT_FILE_PREFIX, force=force)
+        output_channels = merge_files(output_channels, output, prefix=OUTPUT_FILE_PREFIX, force=force, verbose=verbose)
 
     # terminate at this point if no plots should be created
     if not plots:
@@ -607,8 +608,7 @@ def main():
         # use insert instead of append to add the entry at the beginnging of
         # the list to be sure it is used prioritised
         sys.path.insert(0, ROOTSYS + '/lib')
-        if verbose:
-            print('Added custom ROOTSYS to import ROOT package')
+        logger.debug('Added custom ROOTSYS to import ROOT package')
     #print(os.environ['ROOTSYS'])
     #print(os.environ['PYTHONPATH'])
     #print(sys.path)
@@ -631,7 +631,7 @@ def main():
                     logger.warning('Found more than one directory in file %s' % current.GetName())
                     logger.warning('Will use the first one to find the histograms')
                     if verbose:
-                        print('The full list of directories:')
+                        logger.debug('The full list of directories:')
                         current.GetListOfKeys().Print()
                 elif not current.GetListOfKeys().GetSize():
                     logger.critical('Found no directory in file %s' % current.GetName())
@@ -644,11 +644,11 @@ def main():
                 dir = current.GetDirectory(dir_name)
                 #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
                 if dir.GetListOfKeys().GetSize() > 0 and verbose:
-                    print('The full list of histograms in file %s:' % current.GetName())
+                    logger.debug('The full list of histograms in file %s:' % current.GetName())
                     iter = dir.GetListOfKeys().MakeIterator()
                     key = iter()
                     while key:
-                        print('  %s: %s (%s)' % (key.GetClassName(), key.GetName(), key.GetTitle()))
+                        logger.debug('  %s: %s (%s)' % (key.GetClassName(), key.GetName(), key.GetTitle()))
                         key = iter()
                 elif not dir.GetListOfKeys().GetSize():
                     logger.critical('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
@@ -688,8 +688,7 @@ def main():
                     logger.error("Something went wrong merging the %s histograms for channel %s" % (plot, channel))
                     sys.exit(1)
                 histograms[plot][channel] = merged_hist
-                if verbose:
-                    print('Merged %d %s histograms for channel %s' % (len(plots), plot, channel))
+                logger.debug('Merged %d %s histograms for channel %s' % (len(plots), plot, channel))
             else:
                 logger.critical('No %s histograms found for channel %s')
                 histograms[plot][channel] = None
