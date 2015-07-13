@@ -456,6 +456,8 @@ def main():
             help='the name of the histogram(s) which should be plotted for each file')
     parser.add_argument('-f', '--force', action='store_true',
             help='force recreation of files if they already exist (applies mainly for merging files)')
+    parser.add_argument('-s', '--style', nargs=1, metavar='drawing style',
+            help='ROOT drawing style for histograms (for example colz)')
     # possible options: s -> skip analysis, only plot stuff; l -> list possible histograms from file
     parser.add_argument('-v', '--verbose', action='store_true',
             help='print logging output to the terminal')
@@ -465,6 +467,7 @@ def main():
     input_dir = None
     input_file_list = None
     output = None
+    style=''
     merge = args.merge
     analyse_merged = args.analyse and merge
     merge_analysis = args.merge_analysis
@@ -476,8 +479,8 @@ def main():
         logger.setLevel(logging.DEBUG)
     else:
         logger.setLevel(logging.INFO)
-    if args.filename: #args.file_list:
-        input_file_list = args.filename[0] #args.input_files[0]
+    if args.filename:
+        input_file_list = args.filename[0]
     if args.dir:
         input_dir = args.dir[0]
     if input_dir and input_file_list:
@@ -499,6 +502,13 @@ def main():
         else:
             output = get_path(OUTPUT_DATA_PATH)
             logger.debug("Use directory '%s' to store the output data" % output)
+    if args.style:
+        style = args.style[0]
+    if merge and merge_analysis:
+        logger.info('You specified both merge and merge_analysis.')
+        logger.info('Will skip merge_analysis as the files will be already merged before')
+        logger.info("the analysis and merging afterwards won't change anything.")
+        merge_analysis = False
 
     if input_file_list:
         logger.debug("Use file '%s' to read in files" % input_file_list.name)
@@ -703,7 +713,7 @@ def main():
             hist = hists[channel]
             canvas.cd(index)
             hist.SetTitle(channel)
-            hist.Draw()
+            hist.Draw(style)
             index += 1
         timestamp = datetime.datetime.now().strftime('_%Y-%m-%d_%H-%M')  # add timestamp to prevent overwriting existing files
         pdfname = get_path(output, name + timestamp + '.pdf')
