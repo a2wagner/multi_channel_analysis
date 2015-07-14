@@ -449,7 +449,7 @@ def main():
     parser.add_argument('-m', '--merge', action='store_true',
             help='merge files automatically according to their channel')
     parser.add_argument('-a', '--analyse', action='store_true',
-            help='analyse merged files instead of terminating; only needed in combination with -m or --merge')
+            help='analyse the files, either the given input files or the merged files if the option -m or --merge is used')
     parser.add_argument('-j', '--merge-analysis', action='store_true',
             help='merge (join) single analysed files for each channel into one file')
     parser.add_argument('-p', '--plot', nargs='+', metavar='histogram name',
@@ -469,7 +469,7 @@ def main():
     output = None
     style=''
     merge = args.merge
-    analyse_merged = args.analyse and merge
+    analyse = args.analyse
     merge_analysis = args.merge_analysis
     plots = args.plot
     force = args.force
@@ -492,6 +492,10 @@ def main():
             sys.exit("        Please make sure the specified input directory INPUT_DATA_PATH exists.")
         else:
             input_dir = get_path(INPUT_DATA_PATH)
+    if merge_analysis and not analyse:
+        logger.warning("You specified to merge the analyse files but haven't specified to analyse the files.")
+        logger.warning("Will assume that the files should be analysed as well.")
+        analyse = True
     if args.output:
         output = args.output[0]
         logger.debug("Use directory '%s' to store the output data" % output)
@@ -586,22 +590,26 @@ def main():
         if prefix is INPUT_FILE_PREFIX:
             prefix += '_'
         merged_files = merge_files(input_channels, output, prefix=prefix, force=force, verbose=verbose)
-        if not analyse_merged:
-            sys.exit(0)
 
-    check = check_goat()
-    if not check:
-        sys.exit(1)
-    goat_bin, goat_config = check
+    if analyse:
+        check = check_goat()
+        if not check:
+            sys.exit(1)
+        goat_bin, goat_config = check
 
-    if analyse_merged:
-        input_files = merged_files
-        pattern = '^' + prefix + '_(.+)_merged.root$'
-        input_channels = sort_channels(merged_files, pattern)
-    output_channels = goat_analysis(input_channels, goat_bin, goat_config, output, prefix=prefix, verbose=verbose)
+        if merge:
+            input_files = merged_files
+            pattern = '^' + prefix + '_(.+)_merged.root$'
+            input_channels = sort_channels(merged_files, pattern)
+        output_channels = goat_analysis(input_channels, goat_bin, goat_config, output, prefix=prefix, verbose=verbose)
 
-    if merge_analysis:
-        output_channels = merge_files(output_channels, output, prefix=OUTPUT_FILE_PREFIX, force=force, verbose=verbose)
+        if merge_analysis:
+            output_channels = merge_files(output_channels, output, prefix=OUTPUT_FILE_PREFIX, force=force, verbose=verbose)
+    # in case no analysis is performed, prepare the dict output_channels for the case of merged files or the raw input files
+    elif not analyse and merge:
+        output_channels = sort_channels(merged_files, '^' + prefix + '_(.+)_merged.root$')
+    else:
+        output_channels = sort_channels(input_files, pattern)
 
     # terminate at this point if no plots should be created
     if not plots:
