@@ -456,8 +456,12 @@ def main():
             help='the name of the histogram(s) which should be plotted for each file')
     parser.add_argument('-f', '--force', action='store_true',
             help='force recreation of files if they already exist (applies mainly for merging files)')
+    parser.add_argument('-l', '--log-option', nargs='+', metavar='logarithmic option',
+            help='draw histograms logarithmic, use the following format: nD:xyz with n = dimension; e. g. -l 1D:x 2D:z for logarithmic x-axis in 1D histograms and log. z-axis in 2D histograms')
     parser.add_argument('-s', '--style', nargs=1, metavar='drawing style',
             help='ROOT drawing style for histograms (for example colz)')
+    parser.add_argument('-r', '--root-output', nargs=1, metavar='ROOT output filename',
+            help='store the produced histograms in a root file with the given name')
     # possible options: s -> skip analysis, only plot stuff; l -> list possible histograms from file
     parser.add_argument('-v', '--verbose', action='store_true',
             help='print logging output to the terminal')
@@ -467,7 +471,9 @@ def main():
     input_dir = None
     input_file_list = None
     output = None
-    style=''
+    root_output = None
+    style = ''
+    log1d, log2d, log3d = '', '', ''
     merge = args.merge
     analyse = args.analyse
     merge_analysis = args.merge_analysis
@@ -506,8 +512,33 @@ def main():
         else:
             output = get_path(OUTPUT_DATA_PATH)
             logger.debug("Use directory '%s' to store the output data" % output)
+    if args.root_output:
+        root_output = args.root_output[0]
     if args.style:
         style = args.style[0]
+        logger.debug("Use the style '%s' to draw histograms." % style)
+    if args.log_option:
+        for opt in args.log_option:
+            if opt.lower().startswith('1d:'):
+                log1d = opt.lower().split(':')[-1]
+                if log1d.strip('xy'):
+                    logger.warning("Unknown log option for axis '%s' in 1D histogram, will be skipped." % log1d.strip('xy'))
+                    log1d = log1d.strip('xy')
+                logger.debug('Use logarithmic %s axes for 1D histograms.' % ', '.join(log1d))
+            elif opt.lower().startswith('2d:'):
+                log2d = opt.lower().split(':')[-1]
+                if log2d.strip('xyz'):
+                    logger.warning("Unknown log option for axis '%s' in 2D histogram, will be skipped." % log2d.strip('xyz'))
+                    log2d = log2d.strip('xyz')
+                logger.debug('Use logarithmic %s axes for 2D histograms.' % ', '.join(log2d))
+            elif opt.lower().startswith('3d:'):
+                log3d = opt.lower().split(':')[-1]
+                if log3d.strip('xyz'):
+                    logger.warning("Unknown log option for axis '%s' in 3D histogram, will be skipped." % log3d.strip('xyz'))
+                    log3d = log3d.strip('xyz')
+                logger.debug('Use logarithmic %s axes for 3D histograms.' % ', '.join(log3d))
+            else:
+                logger.warning("Unknown log-option '%s', will be skipped." % opt)
     if merge and merge_analysis:
         logger.info('You specified both merge and merge_analysis.')
         logger.info('Will skip merge_analysis as the files will be already merged before')
@@ -641,6 +672,7 @@ def main():
     #gPad.SetLogz()
     histograms = {}
 
+    logger.info('Start reading in the file contents to gather the histograms')
     for channel, file_list in output_channels.items():
         for filename in file_list:
             current = TFile(filename)
@@ -696,6 +728,7 @@ def main():
         sys.exit(1)
 
     # merge histograms which belong to the same channel
+    logger.info('Start merging histograms of the same channel')
     for plot, channels in histograms.items():
         for channel, plots in channels.items():
             if len(plots) == 1:
@@ -711,6 +744,11 @@ def main():
                 logger.critical('No %s histograms found for channel %s')
                 histograms[plot][channel] = None
 
+    root_out = None
+    if root_output:
+        root_out = TFile(get_path(output, root_output), 'RECREATE')
+
+    logger.info('Create the plots with the desired histograms')
     for name, hists in histograms.items():
         cols, rows = get_dimensions(len(hists))
         canvas = TCanvas(name)
@@ -720,6 +758,25 @@ def main():
         for channel in sorted(hists):
             hist = hists[channel]
             canvas.cd(index)
+            if hist.IsA().GetName().startswith('TH1') and log1d:
+                if 'x' in log1d:
+                    gPad.SetLogx()
+                if 'y' in log1d:
+                    gPad.SetLogy()
+            elif hist.IsA().GetName().startswith('TH2') and log2d:
+                if 'x' in log2d:
+                    gPad.SetLogx()
+                if 'y' in log2d:
+                    gPad.SetLogy()
+                if 'z' in log2d:
+                    gPad.SetLogz()
+            elif hist.IsA().GetName().startswith('TH3') and log3d:
+                if 'x' in log3d:
+                    gPad.SetLogx()
+                if 'y' in log3d:
+                    gPad.SetLogy()
+                if 'z' in log3d:
+                    gPad.SetLogz()
             hist.SetTitle(channel)
             hist.Draw(style)
             index += 1
@@ -727,6 +784,12 @@ def main():
         pdfname = get_path(output, name + timestamp + '.pdf')
         canvas.Update()
         canvas.Print(pdfname)
+        if root_out:
+            canvas.Write()
+
+    if root_out:
+        root_out.Write()
+        root_out.Close()
 
 
 if __name__ == '__main__':
