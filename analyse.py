@@ -569,7 +569,7 @@ def main():
                 sys.exit(1)
             else:
                 if not check_file(line, None):
-                    print("        The file '%s' doesn't exist, it will be skipped." % line)
+                    print("        This file will be skipped.")
                 elif line.endswith('.root'):
                     input_files.append(line)
                 else:
@@ -788,8 +788,11 @@ def main():
             canvas.Write()
 
     if root_out:
+        logger.info('Write histograms to file %s' % root_out.GetName())
         root_out.Write()
         root_out.Close()
+
+    logger.info('  - - - Finished - - -')
 
 
 if __name__ == '__main__':
