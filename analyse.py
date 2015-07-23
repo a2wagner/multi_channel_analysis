@@ -668,6 +668,7 @@ def main():
     from ROOT import TCanvas, TH1D, TH2D, TLegend
 
     gROOT.Reset()
+    gROOT.SetBatch(1)  # run ROOT in batch mode to not display canvases
     gStyle.SetCanvasColor(0)
     #gPad.SetLogz()
     histograms = {}
