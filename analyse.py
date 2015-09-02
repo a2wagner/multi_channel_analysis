@@ -704,6 +704,7 @@ def main():
                 elif not dir.GetListOfKeys().GetSize():
                     logger.critical('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
                     logger.critical('Will skip this file')
+                    continue
                 for plot in plots:
                     if not plot in histograms.keys():
                         histograms.update({plot: {}})
