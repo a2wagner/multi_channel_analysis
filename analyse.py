@@ -678,7 +678,7 @@ def main():
     #ROOT = __import__(ROOT)
     from ROOT import gROOT, gStyle, gPad#, gDirectory
     from ROOT import TFile, TDirectoryFile
-    from ROOT import TCanvas, TH1D, TH2D, TLegend
+    from ROOT import TCanvas, TH1, TLegend
 
     gROOT.Reset()
     gROOT.SetBatch(1)  # run ROOT in batch mode to not display canvases
@@ -690,48 +690,41 @@ def main():
     for channel, file_list in output_channels.items():
         for filename in file_list:
             current = TFile(filename)
-            if current.IsOpen():  # only proceed if the file exists and is opened
-                if current.GetListOfKeys().GetSize() > 1:
-                    logger.warning('Found more than one directory in file %s' % current.GetName())
-                    logger.warning('Will use the first one to find the histograms')
-                    if verbose:
-                        logger.debug('The full list of directories:')
-                        current.GetListOfKeys().Print()
-                elif not current.GetListOfKeys().GetSize():
-                    logger.critical('Found no directory in file %s' % current.GetName())
-                    logger.critical('Will skip this file')
-                    continue
-                dir_name = current.GetListOfKeys().First().GetName()
-                #if not current.cd(dir_name):
-                #    print("Can't change directory to '%s', will skip this file" % dir_name)
-                # by using the above the histograms can only be accessed via the gDirectory pointer, thus get the directory directly
-                dir = current.GetDirectory(dir_name)
-                #folder = TDirectoryFile(current.Get("ROOT Memory"))  --> not needed, doesn't work anyway... (current.ls() prints structure though...)
-                if dir.GetListOfKeys().GetSize() > 0 and verbose:
-                    logger.debug('The full list of histograms in file %s:' % current.GetName())
-                    iter = dir.GetListOfKeys().MakeIterator()
-                    key = iter()
-                    while key:
-                        logger.debug('  %s: %s (%s)' % (key.GetClassName(), key.GetName(), key.GetTitle()))
-                        key = iter()
-                elif not dir.GetListOfKeys().GetSize():
-                    logger.critical('Found no histograms in directory %s of file %s' % (dir.GetName(), current.GetName()))
-                    logger.critical('Will skip this file')
-                    continue
-                for plot in plots:
-                    if not plot in histograms.keys():
-                        histograms.update({plot: {}})
-                    if not channel in histograms[plot].keys():
-                        histograms[plot].update({channel: []})
-                    #hist = TH1D(current.FindObjectAny(plot))  # casting TObjects doesn't work, therefore changing the directory is needed...
-                    hist = dir.Get(plot)
-                    if hist == None:  # with pyROOT null pointers have to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
-                        logger.critical('histogram %s not found in %s/%s' % (plot, current.GetName(), dir_name))
-                        continue
-                    histograms[plot][channel].append(copy(hist))
-                current.Close()
-            else:
+            if not current.IsOpen():  # only proceed if the file exists and is opened
                 logger.error('The file could not be opened, please make sure it exists and is readable')
+                continue
+            if not current.GetListOfKeys().GetSize():
+                logger.critical('The file %s is empty' % current.GetName())
+                logger.critical('Will skip this file')
+                continue
+            #dirs = [d.GetName() for d in current.GetListOfKeys() if d.GetClassName() == 'TDirectoryFile']
+            file_entries = get_root_entries(current)
+            if verbose:
+                logger.debug('The full list of histograms in file %s:' % current.GetName())
+                for entry in file_entries:
+                    obj = current.Get(entry)
+                    logger.debug('  %s: %s (%s)' % (obj.IsA().GetName(), entry, obj.GetTitle()))
+            for plot in plots:
+                if not plot in histograms.keys():
+                    histograms.update({plot: {}})
+                if not channel in histograms[plot].keys():
+                    histograms[plot].update({channel: []})
+                # get a list with histograms which match the current plot
+                plot_name = [name for name in file_entries if name.rsplit('/', 1)[-1] == plot]
+                if not plot_name:
+                    logger.critical("The histogram %s couldn't be found in file %s" % (plot, current.GetName()))
+                    continue
+                elif len(plot_name) > 1:
+                    logger.warning('The histogram %s was found %d times in file %s' % (plot, len(plot_name), current.GetName()))
+                    for name in plot_name:
+                        logger.warning('  %s' % name)
+                    logger.warning('Will only use the first occurence of the histogram: %s', plot_name[0])
+                hist = current.Get(plot_name[0])
+                if hist == None:  # with pyROOT null pointers have to be explicitly checked with "== None", other checks won't work because of the used internal structure via the Python C-API "rich compare" interface
+                    logger.critical('histogram %s not found in %s' % (plot, current.GetName()))
+                    continue
+                histograms[plot][channel].append(copy(hist))
+            current.Close()
 
     if not get_all_dict_values(histograms):
         logger.error('No specified histograms found, will terminate')
