@@ -756,7 +756,7 @@ def main():
                 histograms[plot][channel] = merged_hist
                 logger.debug('Merged %d %s histograms for channel %s' % (len(plots), plot, channel))
             else:
-                logger.critical('No %s histograms found for channel %s')
+                logger.critical('No %s histograms found for channel %s' % (plot, channel))
                 histograms[plot][channel] = None
 
     root_out = None
