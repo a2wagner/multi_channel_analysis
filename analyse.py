@@ -433,6 +433,19 @@ def get_all_dict_values(dct):
     else:
         return dct
 
+def get_root_entries(directory):
+    entries = []
+    dir_name = ''
+    if not directory.IsA().GetName() == 'TFile':
+        dir_name = directory.GetName() + '/'
+    for key in directory.GetListOfKeys():
+        if key.GetClassName() == 'TDirectoryFile':
+            subdir = get_root_entries(directory.GetDirectory(key.GetName()))
+            entries += [dir_name + subkey for subkey in subdir]
+        else:
+            entries.append(dir_name + key.GetName())
+    return entries
+
 def main():
     #sys.argv
 
